@@ -1,65 +1,153 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Header } from '@/components/Header';
+import { ConversationTable } from '@/components/ConversationTable';
+import { SidePanel } from '@/components/SidePanel';
+import { sampleConversations, Conversation } from '@/data/sampleConversations';
+
+type FilterType = 'all' | 'relevant' | 'needs-action';
 
 export default function Home() {
+  const [conversations, setConversations] = useState<Conversation[]>(sampleConversations);
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Analyze conversations on mount
+  useEffect(() => {
+    async function analyzeConversations() {
+      setIsLoading(true);
+      try {
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversations: sampleConversations.map((c) => ({
+              id: c.id,
+              contactName: c.contactName,
+              contactCompany: c.contactCompany,
+              messages: c.messages,
+            })),
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setConversations((prev) =>
+            prev.map((conv) => {
+              const result = data.results.find((r: { id: string }) => r.id === conv.id);
+              if (result) {
+                return {
+                  ...conv,
+                  statusSummary: result.analysis.statusSummary,
+                  actionItems: result.analysis.actionItems,
+                };
+              }
+              return conv;
+            })
+          );
+        }
+      } catch (error) {
+        console.error('Error analyzing conversations:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    analyzeConversations();
+  }, []);
+
+  const handleToggleRelevant = useCallback((id: string) => {
+    setConversations((prev) =>
+      prev.map((conv) =>
+        conv.id === id ? { ...conv, isRelevant: !conv.isRelevant } : conv
+      )
+    );
+  }, []);
+
+  const handleSelectConversation = useCallback((conversation: Conversation) => {
+    setSelectedConversation(conversation);
+  }, []);
+
+  const handleClosePanel = useCallback(() => {
+    setSelectedConversation(null);
+  }, []);
+
+  // Update selected conversation when conversations are analyzed
+  useEffect(() => {
+    if (selectedConversation) {
+      const updated = conversations.find((c) => c.id === selectedConversation.id);
+      if (updated) {
+        setSelectedConversation(updated);
+      }
+    }
+  }, [conversations, selectedConversation]);
+
+  // Filter conversations
+  const filteredConversations = conversations.filter((conv) => {
+    switch (filter) {
+      case 'relevant':
+        return conv.isRelevant;
+      case 'needs-action':
+        return conv.actionItems && conv.actionItems.length > 0;
+      default:
+        return true;
+    }
+  });
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-[#FAF8F8]">
+      <Header filter={filter} onFilterChange={setFilter} />
+
+      <main className="max-w-7xl mx-auto px-6 py-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <ConversationTable
+            conversations={filteredConversations}
+            onToggleRelevant={handleToggleRelevant}
+            onSelectConversation={handleSelectConversation}
+            selectedId={selectedConversation?.id || null}
+            isLoading={isLoading}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Stats */}
+        <div className="mt-6 grid grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <p className="text-sm text-gray-500">Total Conversations</p>
+            <p className="text-2xl font-semibold text-[#1A1A1A]">
+              {conversations.length}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <p className="text-sm text-gray-500">Marked Relevant</p>
+            <p className="text-2xl font-semibold text-[#BB8CFC]">
+              {conversations.filter((c) => c.isRelevant).length}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <p className="text-sm text-gray-500">Need Action</p>
+            <p className="text-2xl font-semibold text-[#1A1A1A]">
+              {
+                conversations.filter(
+                  (c) => c.actionItems && c.actionItems.length > 0
+                ).length
+              }
+            </p>
+          </div>
         </div>
       </main>
+
+      {/* Side Panel */}
+      <SidePanel conversation={selectedConversation} onClose={handleClosePanel} />
+
+      {/* Overlay when panel is open */}
+      {selectedConversation && (
+        <div
+          className="fixed inset-0 bg-black/20 z-40"
+          onClick={handleClosePanel}
+        />
+      )}
     </div>
   );
 }
